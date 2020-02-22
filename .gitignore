@@ -1,15 +1,8 @@
 *.pt
-
 __pycache__/
-
 data/
-
 env
-
 .vscode
-
 *.csv
-
 experiments/
-
 .idea/
