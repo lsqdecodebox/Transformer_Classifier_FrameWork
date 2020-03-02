@@ -198,19 +198,21 @@ def compute_output_arrays(df, columns):
 
 
 class BucketingSampler:
-
+    """ 将文本长度值进行排序 的batch处理
+    现在是计算一个batch中总长度匹配 定义的batch size和length的总长度
+    """
     def __init__(self, lengths, batch_size, maxlen=500):
 
         self.lengths = lengths
         self.batch_size = batch_size
         self.maxlen = 500
-
+        # print(batch_size)
         self.batches = self._make_batches(lengths, batch_size, maxlen)
 
     def _make_batches(self, lengths, batch_size, maxlen):
 
         max_total_length = maxlen * batch_size
-        ids = np.argsort(lengths)
+        ids = np.argsort(lengths)  # 照顾长度的取值
 
         current_maxlen = 0
         batch = []
@@ -220,13 +222,13 @@ class BucketingSampler:
             current_len = len(batch) * current_maxlen
             size = lengths[id]
             current_maxlen = max(size, current_maxlen)
-            new_len = current_maxlen * (len(batch) + 1)
+            new_len = current_maxlen * (len(batch) + 1)  # 最大长度匹配，整合成一个batch
             if new_len < max_total_length:
                 batch.append(id)
             else:
                 batches.append(batch)
-                current_maxlen = size
-                batch = [id]
+                current_maxlen = size       # 最大长度回归到上一个长度值
+                batch = [id]        # 新batch
 
         if batch:
             batches.append(batch)
@@ -243,7 +245,7 @@ class BucketingSampler:
 
 
 def make_collate_fn(padding_values={"input_ids": 0, "input_masks": 0, "input_segments": 0}):
-
+    """padding input_ids、input_masks、input_segments"""
     def _collate_fn(batch):
 
         for name, padding_value in padding_values.items():
@@ -254,8 +256,9 @@ def make_collate_fn(padding_values={"input_ids": 0, "input_masks": 0, "input_seg
             for n, size in enumerate(lengths):
                 p = max_length - size
                 if p:
-                    pad_width = [(0, p)] + [(0, 0)] * (batch[n][name].ndim - 1)
-                    if padding_value == "edge":
+                    # [(0, 34)] + [(0, 0)]*2 = [(0, 34), (0, 0), (0, 0)]
+                    pad_width = [(0, p)] + [(0, 0)] * (batch[n][name].ndim - 1)  # 填充维度，如果维度不是一维的话
+                    if padding_value == "edge":     # padding value 直接取巧 放在数值数据上
                         batch[n][name] = np.pad(
                             batch[n][name], pad_width,
                             mode="edge")
@@ -263,7 +266,6 @@ def make_collate_fn(padding_values={"input_ids": 0, "input_masks": 0, "input_seg
                         batch[n][name] = np.pad(
                             batch[n][name], pad_width,
                             mode="constant", constant_values=padding_value)
-
         return default_collate(batch)
 
     return _collate_fn
@@ -273,12 +275,12 @@ class QuestDataset(torch.utils.data.Dataset):
     def __init__(self, inputs, lengths, labels=None):
         self.inputs = inputs
         self.labels = labels
-        self.lengths = lengths
+        self.lengths = lengths   # 长度还被拿来做权重
 
     @classmethod
     def from_frame(cls, args, df, tokenizer, test=False):
-        """ here I put major preprocessing. why not lol
-        """
+
+        # 通过长度控制 title question answer 的输入
         inputs = compute_input_arays(
             args,
             df,
@@ -291,13 +293,13 @@ class QuestDataset(torch.utils.data.Dataset):
         )
 
         outputs = None
-        if not test:
+        if not test:        # 数据集是否有标准答案
             outputs = compute_output_arrays(df, args.target_columns)
             outputs = torch.tensor(outputs, dtype=torch.float32)
 
         # lengths = np.argmax(inputs[0] == 0, axis=1)
         # lengths[lengths == 0] = inputs[0].shape[1]
-        lengths = [len(x) for x in inputs[0]]
+        lengths = [len(x) for x in inputs[0]]   # padding 保留到 dataloader 的collate_fn 上处理
 
         return cls(inputs=inputs, lengths=lengths, labels=outputs)
 
@@ -310,7 +312,7 @@ class QuestDataset(torch.utils.data.Dataset):
         input_segments = self.inputs[2][idx]
         lengths = self.lengths[idx]
 
-        sample = dict(
+        sample = dict(      # 以字典形式返回
             idx=idx,
             input_ids=input_ids,
             input_masks=input_masks,
@@ -318,7 +320,7 @@ class QuestDataset(torch.utils.data.Dataset):
             lengths=lengths
         )
 
-        if self.labels is not None:
+        if self.labels is not None:     # 数据集是否有标准答案
             labels = self.labels[idx]
             sample["labels"] = labels
 
@@ -335,34 +337,34 @@ def cross_validation_split(
     y_train = train_df[args.target_columns].values
 
     for fold, (train_index, val_index) in enumerate(kf.split(
-        train_df.values, groups=train_df.question_title
+        train_df.values, groups=train_df.question_title     # 以title作GroupKFold分类
     )):
 
-        if args.use_folds is not None and fold not in args.use_folds:
+        if args.use_folds is not None and fold not in args.use_folds:       # 根据 fold 配置来进行处理
             continue
 
-        if not ignore_train:
+        if not ignore_train:    # 同样考虑是否有测试
             train_subdf = train_df.iloc[train_index]
-            train_set = QuestDataset.from_frame(args, train_subdf, tokenizer)
+            train_dataset = QuestDataset.from_frame(args, train_subdf, tokenizer)
         else:
-            train_set = None
+            train_dataset = None
 
-        valid_set = QuestDataset.from_frame(
+        valid_dataset = QuestDataset.from_frame(
             args, train_df.iloc[val_index], tokenizer
         )
 
         yield (
             fold,
-            train_set,
-            valid_set,
+            train_dataset,
+            valid_dataset,
             train_df.iloc[train_index],
             train_df.iloc[val_index],
         )
 
 
-def get_pseudo_set(args, pseudo_df, tokenizer):
+def get_pseudo_dataset(args, pseudo_df, tokenizer):
     return QuestDataset.from_frame(args, pseudo_df, tokenizer)
 
 
-def get_test_set(args, test_df, tokenizer):
+def get_test_dataset(args, test_df, tokenizer):
     return QuestDataset.from_frame(args, test_df, tokenizer, True)

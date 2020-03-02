@@ -2,12 +2,16 @@ import argparse
 
 parser = argparse.ArgumentParser()
 
+parser.add_argument("--is_cuda", type=bool, default=True)
+
 parser.add_argument("--data_path", type=str, default="../input/")
 parser.add_argument("--pseudo_file", type=str)
 parser.add_argument("--n_pseudo", type=int)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--folds", type=int, default=5)
 parser.add_argument("--use_folds", type=int, nargs="+")
+parser.add_argument("--checkpoints_path", type=str, default='./experiment_checkpoints')
+parser.add_argument("--predictions_path", type=str, default='./experiment_predictions')
 
 parser.add_argument("--label", type=str, default="qa")
 parser.add_argument("--bert_model", type=str, default="bert-base-uncased")

@@ -6,7 +6,7 @@ from misc import target_columns
 
 
 def target_metric(prediction, actual, columns=target_columns):
-
+    """ spearman 评估"""
     prediction = prediction.sort_values(by="qa_id").reset_index(drop=True)
     actual = actual.sort_values(by="qa_id").reset_index(drop=True)
 

@@ -1,7 +1,4 @@
 import warnings, logging
-
-warnings.filterwarnings("ignore")
-
 import gc
 import random
 import os, multiprocessing, glob
@@ -15,37 +12,15 @@ from torch.utils.data import ConcatDataset
 from transformers import get_linear_schedule_with_warmup
 from model import get_model_optimizer
 from loops import train_loop, evaluate, infer
-from dataset import cross_validation_split, get_test_set, get_pseudo_set, make_collate_fn, BucketingSampler
+from dataset import cross_validation_split, get_test_dataset, get_pseudo_dataset, make_collate_fn, BucketingSampler
 from args import args
 from transformers import BertTokenizer, AlbertTokenizer
 from torch.utils.data import DataLoader, Dataset
 
-# from mag.experiment import Experiment
-# import mag
 
-# mag.use_custom_separator("-")
-
-
-config = {      # TODO  attach to experiment
-    "_seed": args.seed,
-    "bert_model": args.bert_model.replace("-", "_"),
-    "batch_accumulation": args.batch_accumulation,
-    "batch_size": args.batch_size,
-    "warmup": args.warmup,
-    "lr": args.lr,
-    "folds": args.folds,
-    "max_sequence_length": args.max_sequence_length,
-    "max_title_length": args.max_title_length,
-    "max_question_length": args.max_question_length,
-    "max_answer_length": args.max_answer_length,
-    "head_tail": args.head_tail,
-    "label": args.label,
-    "_pseudo_file": args.pseudo_file,
-}
-# experiment = Experiment(config, implicit_resuming=args.use_folds is not None)
-# experiment.register_directory("checkpoints")
-# experiment.register_directory("predictions")
-
+# lingo configuration
+# args.bert_model = '../huggingface-bert-base-uncased-pytorch'
+# args.is_cuda = False
 
 def seed_everything(seed: int):
     random.seed(seed)
@@ -55,9 +30,10 @@ def seed_everything(seed: int):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
 
-
+warnings.filterwarnings("ignore")
 logging.getLogger("transformers").setLevel(logging.ERROR)
 seed_everything(args.seed)
+
 
 ## load the data
 train_df = pd.read_csv(os.path.join(args.data_path, "train.csv"))
@@ -67,12 +43,13 @@ submission = pd.read_csv(os.path.join(args.data_path, "sample_submission.csv"))
 tokenizer = BertTokenizer.from_pretrained(
     args.bert_model, do_lower_case=("uncased" in args.bert_model)
 )
-print('1111111')
-test_set = get_test_set(args, test_df, tokenizer)
+
+test_dataset = get_test_dataset(args, test_df, tokenizer)
+
 test_loader = DataLoader(
-    test_set,
-    batch_sampler=BucketingSampler(
-        test_set.lengths,
+    test_dataset,
+    batch_sampler=BucketingSampler(     # for 优化, sigma(per_sample_length) = batch size * max_length
+        test_dataset.lengths,
         batch_size=args.batch_size,
         maxlen=args.max_sequence_length
     ),
@@ -80,12 +57,12 @@ test_loader = DataLoader(
 )
 
 
-for fold, train_set, valid_set, train_fold_df, val_fold_df in (
-    cross_validation_split(
-        args,
-        train_df,
-        tokenizer
-    )
+for fold, train_dataset, valid_dataset, train_fold_df, val_fold_df in (
+        cross_validation_split(
+            args,
+            train_df,
+            tokenizer
+        )
 ):
 
     print()
@@ -93,55 +70,52 @@ for fold, train_set, valid_set, train_fold_df, val_fold_df in (
     print()
 
     valid_loader = DataLoader(
-        valid_set,
+        valid_dataset,
         batch_sampler=BucketingSampler(
-            valid_set.lengths,
+            valid_dataset.lengths,
             batch_size=args.batch_size,
             maxlen=args.max_sequence_length
         ),
         collate_fn=make_collate_fn(),
     )
 
-    experiment_checkpoints = './experiment_checkpoints'  # TODO attach to experiment
-    experiment_predictions= './experiment_predictions'  # TODO attach to experiment
-
+    # 文件输出配置
     fold_checkpoints = os.path.join(
-        experiment_checkpoints, "fold{}".format(fold)
+        args.checkpoints_path , "fold{}".format(fold)
     )
     fold_predictions = os.path.join(
-        experiment_predictions, "fold{}".format(fold)
+        args.predictions_path, "fold{}".format(fold)
     )
-
     os.makedirs(fold_checkpoints, exist_ok=True)
     os.makedirs(fold_predictions, exist_ok=True)
 
+
     iteration = 0
     best_score = -1.0
-    print('222222222222')
+
     model, optimizer = get_model_optimizer(args)
-    print('33333333333333')
     criterion = nn.BCEWithLogitsLoss()
+
 
     for epoch in range(args.epochs):
 
-        epoch_train_set = train_set
+        epoch_train_dataset = train_dataset
 
         if args.pseudo_file is not None:
 
             pseudo_df = pd.read_csv(args.pseudo_file.format(fold))
 
-            pseudo_set = get_pseudo_set(
+            pseudo_set = get_pseudo_dataset(
                 args,
                 pseudo_df.sample(args.n_pseudo),
                 tokenizer
             )
+            epoch_train_dataset = ConcatDataset([epoch_train_dataset, pseudo_set])
 
-            epoch_train_set = ConcatDataset([epoch_train_set, pseudo_set])
-
-        train_loader = DataLoader(
-            epoch_train_set,
+        train_loader = DataLoader(   # train loader 不进行sample了？
+            epoch_train_dataset,
             batch_size=args.batch_size,
-            num_workers=args.workers,
+            # num_workers=args.workers,
             collate_fn=make_collate_fn(),
             drop_last=True,
             shuffle=True,
@@ -166,7 +140,11 @@ for fold, train_set, valid_set, train_fold_df, val_fold_df in (
         )
 
         avg_val_loss, score, val_preds = evaluate(
-            args, model, valid_loader, criterion, val_shape=len(valid_set)
+            args,
+            model,
+            valid_loader,
+            criterion,
+            val_shape=len(valid_dataset)
         )
 
         print(
@@ -181,6 +159,7 @@ for fold, train_set, valid_set, train_fold_df, val_fold_df in (
                 fold_checkpoints, "model_on_epoch_{}.pth".format(epoch)
             ),
         )
+
         val_preds_df = val_fold_df.copy()[["qa_id"] + args.target_columns]
         val_preds_df[args.target_columns] = val_preds
         val_preds_df.to_csv(
@@ -188,13 +167,11 @@ for fold, train_set, valid_set, train_fold_df, val_fold_df in (
             index=False,
         )
 
-        test_preds = infer(args, model, test_loader, test_shape=len(test_set))
+        test_preds = infer(args, model, test_loader, test_shape=len(test_dataset))
         test_preds_df = submission.copy()
         test_preds_df[args.target_columns] = test_preds
         test_preds_df.to_csv(
-            os.path.join(
-                fold_predictions, "test_on_epoch_{}.csv".format(epoch)
-            ),
+            os.path.join(fold_predictions, "test_on_epoch_{}.csv".format(epoch)),
             index=False,
         )
 
@@ -211,19 +188,19 @@ for fold, train_set, valid_set, train_fold_df, val_fold_df in (
                 os.path.join(fold_predictions, "best_test.csv"), index=False
             )
     del model, optimizer, criterion, scheduler
-    del valid_loader, train_loader, valid_set, train_set
+    del valid_loader, train_loader, valid_dataset, train_dataset
     torch.cuda.empty_cache()
     gc.collect()
 
     print()
 
+
 best_val_df_files = [
-    os.path.join(experiment_predictions, "fold{}".format(fold), "best_val.csv")
+    os.path.join(args.predictions_path, "fold{}".format(fold), "best_val.csv")
     for fold in range(args.folds)
 ]
 
 if all(os.path.isfile(file) for file in best_val_df_files):
     best_val_dfs = [pd.read_csv(file) for file in best_val_df_files]
-    # create oof df only if all folds were used
     oof_df = pd.concat(best_val_dfs).reset_index(drop=True)
-    oof_df.to_csv(os.path.join(experiment_predictions, "oof.csv"), index=False)
+    oof_df.to_csv(os.path.join(args.predictions_path, "oof.csv"), index=False)

@@ -18,12 +18,14 @@ def train_loop(model, train_loader, optimizer, criterion, scheduler, args, itera
             batch["input_segments"],
             batch["labels"]
         )
-        input_ids, input_masks, input_segments, labels = (
-            input_ids.cuda(),
-            input_masks.cuda(),
-            input_segments.cuda(),
-            labels.cuda(),
-        )
+
+        if args.is_cuda:
+            input_ids, input_masks, input_segments, labels = (
+                input_ids.cuda(),
+                input_masks.cuda(),
+                input_segments.cuda(),
+                labels.cuda(),
+            )
 
         logits = model(
             input_ids=input_ids.long(),
@@ -33,7 +35,7 @@ def train_loop(model, train_loader, optimizer, criterion, scheduler, args, itera
         loss = criterion(logits, labels)
 
         loss.backward()
-        if (iteration + 1) % args.batch_accumulation == 0:
+        if (iteration + 1) % args.batch_accumulation == 0:  # 延迟更新参数，增加batch_size
             optimizer.step()
             scheduler.step()
             optimizer.zero_grad()
@@ -41,7 +43,8 @@ def train_loop(model, train_loader, optimizer, criterion, scheduler, args, itera
 
         avg_loss += loss.item() / (len(train_loader) * args.batch_accumulation)
 
-    torch.cuda.empty_cache()
+    if args.is_cuda:
+        torch.cuda.empty_cache()
     gc.collect()
     return (
         avg_loss,
@@ -67,12 +70,13 @@ def evaluate(args, model, val_loader, criterion, val_shape):
                 batch["labels"]
             )
             ids.extend(id.cpu().numpy())
-            input_ids, input_masks, input_segments, labels = (
-                input_ids.cuda(),
-                input_masks.cuda(),
-                input_segments.cuda(),
-                labels.cuda(),
-            )
+            if args.is_cuda:
+                input_ids, input_masks, input_segments, labels = (
+                    input_ids.cuda(),
+                    input_masks.cuda(),
+                    input_segments.cuda(),
+                    labels.cuda(),
+                )
 
             logits = model(
                 input_ids=input_ids.long(),
@@ -88,7 +92,7 @@ def evaluate(args, model, val_loader, criterion, val_shape):
         original = np.array(original)
 
         score = 0
-        preds = torch.sigmoid(torch.tensor(valid_preds)).numpy()
+        preds = torch.sigmoid(torch.tensor(valid_preds)).numpy() # TODO
 
         for i in range(len(args.target_columns)):
             score += np.nan_to_num(spearmanr(original[:, i], preds[:, i]).correlation)
@@ -107,6 +111,10 @@ def infer(args, model, test_loader, test_shape):
         with torch.no_grad():
 
             ids.extend(batch["idx"].cpu().numpy())
+            if args.is_cuda:
+                batch["input_ids"] = batch["input_ids"].cuda()
+                batch["input_masks"] = batch["input_masks"].cuda()
+                batch["input_segments"] = batch["input_segments"].cuda()
 
             predictions = model(
                 input_ids=batch["input_ids"].cuda(),
