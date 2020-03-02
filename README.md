@@ -1,4 +1,5 @@
 ### Google QUEST Q&A Labeling
+基于hugging face 的bert模型 pipeline
 
 比赛数据 [here](https://www.kaggle.com/c/google-quest-challenge/data)
 
