@@ -18,9 +18,9 @@ pseudo 训练示例:
 
 
 概述：
-自适应层权重
-multi-samplt-drop  https://arxiv.org/abs/1905.09788 
-pseudo label
-自动padding至batch内最长文本的长度
-不同的model parameter，不同的optimizer参数 
-优化内存管理
+自适应层权重  
+multi-samplt-drop  https://arxiv.org/abs/1905.09788   
+pseudo label  
+自动padding至batch内最长文本的长度  
+不同的model parameter，不同的optimizer参数   
+优化内存管理    
