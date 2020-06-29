@@ -17,7 +17,6 @@ from args import args
 from transformers import BertTokenizer, AlbertTokenizer
 from torch.utils.data import DataLoader, Dataset
 
-
 # lingo configuration
 # args.bert_model = '../huggingface-bert-base-uncased-pytorch'
 # args.is_cuda = False
@@ -112,7 +111,7 @@ for fold, train_dataset, valid_dataset, train_fold_df, val_fold_df in (
             )
             epoch_train_dataset = ConcatDataset([epoch_train_dataset, pseudo_set])
 
-        train_loader = DataLoader(   # train loader 不进行sample了？
+        train_loader = DataLoader(
             epoch_train_dataset,
             batch_size=args.batch_size,
             # num_workers=args.workers,

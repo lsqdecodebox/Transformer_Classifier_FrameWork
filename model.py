@@ -82,11 +82,11 @@ class CustomBert(BertPreTrainedModel):  # 重写
             dim=2
         )
 
-        cls_output = (      # torch.Size([7, 768])
+        cls_output = (      # torch.Size([7, 768]) 自适应权重
             torch.softmax(self.layer_weights, dim=0) * cls_outputs
         ).sum(-1)
 
-        # multisample dropout (wut): https://arxiv.org/abs/1905.09788   论文很到位
+        # multisample dropout (wut): https://arxiv.org/abs/1905.09788   multi-samplt-drop
         logits = torch.mean(torch.stack([   # torch.Size([7, 30])
             self.classifier(self.high_dropout(cls_output))
             for _ in range(5)
