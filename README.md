@@ -17,7 +17,7 @@ pseudo 训练示例:
 
 
 
-概述：
+概述：  
 自适应层权重  
 multi-samplt-drop  https://arxiv.org/abs/1905.09788   
 pseudo label  
