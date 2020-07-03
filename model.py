@@ -48,9 +48,9 @@ class CustomBert(BertPreTrainedModel):  # 重写
 
         n_weights = config.num_hidden_layers + 1
         weights_init = torch.zeros(n_weights).float()
-        weights_init[:-1] = -3   # 咋想的
+        weights_init[:-1] = -3
         self.layer_weights = torch.nn.Parameter(weights_init)
-        # print('weights_init',weights_init)
+
         self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
 
         self.init_weights()
@@ -76,7 +76,6 @@ class CustomBert(BertPreTrainedModel):  # 重写
 
         hidden_layers = outputs[2]
         last_hidden = outputs[0]
-        # print(hidden_layers)
         cls_outputs = torch.stack(   # torch.Size([7, 768, 13])
             [self.dropout(layer[:, 0, :]) for layer in hidden_layers],
             dim=2
@@ -98,7 +97,7 @@ class CustomBert(BertPreTrainedModel):  # 重写
 
 
 def get_model_optimizer(args):
-    model = CustomBert.from_pretrained(args.bert_model, num_labels=args.num_classes) # 30个类别输出
+    model = CustomBert.from_pretrained(args.bert_model, num_labels=args.num_classes)
     if args.is_cuda:
         model.cuda()
         model = nn.DataParallel(model)  # 放置多核GPU
