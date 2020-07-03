@@ -1,8 +1,8 @@
 ## 基于bert分类 的 代码框架
 
 主要依赖：
-	pytorch
-	hugging face transformers
+	pytorch  
+	hugging face transformers  
 	
 
 训练示例:
